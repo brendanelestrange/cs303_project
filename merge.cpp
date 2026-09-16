@@ -38,7 +38,7 @@ void split(Node *head, Node *&left, Node *&right) {
     Node *slow = head;
     Node *fast = head->next;
  
-    // fast moves 2 nodes, slow moves 1 node
+    //fast moves 2 nodes, slow moves 1 node
     while (fast != nullptr && fast->next != nullptr) {
         slow = slow->next;
         fast = fast->next->next;
@@ -46,14 +46,15 @@ void split(Node *head, Node *&left, Node *&right) {
  
     // fast hit the end, so slow is the last node of the first half
     left  = head;
-    right = slow->next;     // the node after slow
-    slow->next = nullptr;   // cut the link after slow
+    right = slow->next;
+    slow->next = nullptr;
 
 }
-
+//reference to gfg again
 Node *merge(Node *left, Node *right, bool numeric) {
-    Node tempo;             // temporary starting point, not part of the result
-    Node *tail = &tempo;    // running tail: last node of the merged list so far
+    // temporary starting point
+    Node tempo;
+    Node *tail = &tempo;
  
     while (left != nullptr && right != nullptr) {
         // numeric decides which compare function to use
