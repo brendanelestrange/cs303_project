@@ -1,1 +1,6 @@
 *.o
+
+# FlyWire data (too big for GitHub) and connectome caches
+connections_princeton.csv
+*.jls
+Manifest.toml
