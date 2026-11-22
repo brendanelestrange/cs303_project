@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fly brain viewer</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: dark;
+  --page: #0e0e0d; --panel: #1a1a19; --line: #33322f; --ink: #f0efec; --ink2: #c3c2b7; --muted: #8f8e86;
+  --input: #3987e5; --flap: #d95926; --glide: #199e70; --other: #a9a89f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 13px/1.4 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; }
+#app { display: grid; gap: 10px; padding: 10px; min-height: 100vh;
+  grid-template: "game brain side" minmax(380px, 1fr) "game raster raster" 336px / 288px minmax(0, 1fr) 292px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+#gamebox { grid-area: game; display: flex; flex-direction: column; gap: 12px; }
+#brainbox { grid-area: brain; padding: 0; position: relative; overflow: hidden; background: #0b0b0a; min-height: 380px; }
+#side { grid-area: side; display: flex; flex-direction: column; gap: 16px; }
+#rasterbox { grid-area: raster; display: flex; flex-direction: column; gap: 6px; }
+h1 { font-size: 15px; margin: 0; font-weight: 650; }
+h2 { font-size: 13px; margin: 0 0 6px; font-weight: 600; }
+p { margin: 0; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+#screen { position: relative; width: 100%; max-width: 288px; margin: 0 auto; border-radius: 6px; overflow: hidden; background: #000; }
+#screen canvas { display: block; width: 100%; aspect-ratio: 9/16; max-height: 52vh; object-fit: contain; image-rendering: pixelated; }
+#banner { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; }
+#banner span { background: #000c; padding: 4px 10px; border-radius: 5px; font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.stats b { display: block; font-size: 20px; font-weight: 650; line-height: 1.15; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+button, select { font: inherit; color: var(--ink); background: #2a2927; border: 1px solid #45443f; border-radius: 6px;
+  padding: 5px 10px; cursor: pointer; min-height: 30px; }
+button:hover, select:hover { background: #36352f; }
+:focus-visible { outline: 2px solid var(--input); outline-offset: 1px; }
+label.row { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; width: 100%; }
+input[type=range] { width: 100%; accent-color: var(--ink2); }
+#gl { width: 100%; height: 100%; display: block; position: absolute; inset: 0; cursor: grab; touch-action: none; }
+#gl:active { cursor: grabbing; }
+.overlay { position: absolute; pointer-events: none; }
+#brainhead { top: 12px; left: 14px; max-width: min(55%, 420px); }
+#legend { bottom: 10px; left: 14px; right: 14px; display: flex; flex-wrap: wrap; gap: 3px 14px; color: var(--ink2); font-size: 12px; }
+#legend i, .key { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+#brainopts { top: 10px; right: 10px; pointer-events: auto; display: flex; gap: 10px; color: var(--ink2); font-size: 12px; }
+#brainopts label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+#clock { top: 38px; right: 14px; text-align: right; font-size: 12px; color: var(--ink2); }
+#clock b { font-size: 18px; color: var(--ink); }
+.tip { position: fixed; z-index: 5; pointer-events: none; background: #000e; border: 1px solid #55534d; border-radius: 6px;
+  padding: 6px 9px; font-size: 12px; max-width: 260px; display: none; }
+.bar { display: grid; grid-template-columns: 74px 1fr 74px; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.bar .on { color: var(--ink); font-weight: 600; }
+.bar span:last-child { text-align: left; } .bar span:first-child { text-align: right; }
+.track { height: 10px; background: #2a2927; position: relative; border-radius: 3px; }
+.track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #6b6a63; }
+.track i { position: absolute; top: 0; bottom: 0; background: var(--input); border-radius: 3px; }
+#bars { display: grid; gap: 6px; }
+#decision { display: flex; align-items: baseline; gap: 8px; }
+#decision b { font-size: 26px; line-height: 1.1; }
+#hist { width: 100%; height: 190px; display: block; }
+#rasterwrap { flex: 1; display: grid; grid-template-columns: 94px 1fr; gap: 8px; min-height: 0; }
+#rows { position: relative; font-size: 11px; line-height: 1; color: var(--ink2); }
+#rows div { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
+#rows .key { width: 7px; height: 7px; margin-right: 4px; }
+#raster { width: 100%; height: 100%; display: block; background: #0b0b0a; border-radius: 4px; min-height: 0; }
+#fail { display: none; position: absolute; inset: 0; place-content: center; text-align: center; padding: 20px; }
+#status { display: none; position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 6; background: #000;
+  border: 1px solid #77756c; padding: 7px 14px; border-radius: 6px; }
+@media (max-width: 1080px) {
+  #app { grid-template: "game side" auto "brain brain" 60vh "raster raster" 336px / minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  #app { grid-template: "game" auto "brain" 60vh "side" auto "raster" 336px / minmax(0, 1fr); }
+  #brainhead { max-width: 90%; top: 84px; }
+}
+</style>
+</head>
+<body>
+<div id="status" role="status">Lost the connection to fly_viewer.py. Waiting for it to come back.</div>
+<div id="tip" class="tip"></div>
+<main id="app">
+  <section id="gamebox" class="panel" aria-label="Game">
+    <div>
+      <h1>Fly brain viewer</h1>
+      <p class="muted small" id="brainname">Loading</p>
+    </div>
+    <div id="screen"><canvas id="game" width="288" height="512"></canvas>
+      <div id="banner" hidden><span></span></div></div>
+    <div class="stats">
+      <div><span class="muted small">Pipes</span><b id="sScore">0</b></div>
+      <div><span class="muted small">Game</span><b id="sGame">1</b></div>
+      <div><span class="muted small">Mean</span><b id="sMean">–</b></div>
+      <div><span class="muted small">Best</span><b id="sBest">0</b></div>
+    </div>
+    <div class="controls">
+      <button id="bPlay" title="Space">Pause</button>
+      <button id="bStep" title="Right arrow: play one decision in slow motion">One decision</button>
+      <button id="bRestart">New game</button>
+      <label class="row"><span>Speed</span>
+        <select id="speed"><option value="0.1">0.1× (slow motion)</option><option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option><option value="1">1× game speed</option><option value="2">2×</option></select><span></span></label>
+      <label class="row"><span>Gap</span><input id="gap" type="range" min="80" max="220" step="10"><span id="gapv"></span></label>
+      <p class="muted small">A new gap applies from the next game.</p>
+    </div>
+  </section>
+
+  <section id="brainbox" class="panel" aria-label="Brain">
+    <canvas id="gl"></canvas>
+    <div id="fail">This browser has no WebGL 2, so the 3D brain can't be drawn. The raster below still works.</div>
+    <div id="brainhead" class="overlay"><h2 id="bTitle">Brain</h2><p class="muted small" id="bSub"></p></div>
+    <div id="brainopts" class="overlay">
+      <label><input type="checkbox" id="oSpin"> Rotate</label>
+      <label><input type="checkbox" id="oEdges" checked> Synapses</label>
+      <label><input type="checkbox" id="oRest" checked> Rest of brain</label>
+    </div>
+    <div id="legend" class="overlay"></div>
+    <div id="clock" class="overlay"><b id="cSpikes">0</b> spikes this decision<br><span id="cTime"></span></div>
+  </section>
+
+  <aside id="side" class="panel" aria-label="Senses and decision">
+    <div><h2>What the fly senses</h2><div id="bars"></div></div>
+    <div>
+      <h2>Decision</h2>
+      <div id="decision"><b id="dWord">–</b><span class="muted" id="dWhy"></span></div>
+    </div>
+    <div style="position:relative">
+      <h2 id="hTitle"></h2>
+      <canvas id="hist"></canvas>
+      <p class="muted small">Last 60 decisions. Dashed: threshold. Dots: flaps.</p>
+    </div>
+  </aside>
+
+  <section id="rasterbox" class="panel" aria-label="Spike raster">
+    <h2 style="margin:0">Spikes <span class="muted small" id="rSub" style="font-weight:400"></span></h2>
+    <div id="rasterwrap"><div id="rows"></div><canvas id="raster"></canvas></div>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const css = getComputedStyle(document.documentElement);
+const ROLE_VAR = ["--other", "--input", "--flap", "--glide"];
+const COLORS = ROLE_VAR.map(v => css.getPropertyValue(v).trim());
+const RGB = COLORS.map(h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16) / 255));
+const bytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const arr = (s, T) => new T(bytes(s).buffer);
+const FEATURES = [["above gap", "below gap"], ["rising", "falling"], ["pipe far", "pipe close"], ["high", "low"]];
+const RASTER_W = 1000, HIST = 60, FADE_MS = 170;
+
+let M, role, glow, rowOf, R, G, queue = [], cur = null, history = [], state = { playing: true, speed: 1 };
+let lastSpikes = new Map();          // neuron -> spikes in the decision on screen
+
+function text(id, s) { const e = $(id); if (e.textContent !== s) e.textContent = s; }
+
+// ---------- server ----------
+function send(cmd, value) {
+  fetch("/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd, value }) })
+    .catch(() => {});
+}
+function connect() {
+  const es = new EventSource("/events");
+  let gone = false;
+  es.onopen = () => { $("status").style.display = "none"; if (gone) location.reload(); };
+  es.onerror = () => { gone = true; $("status").style.display = "block"; };
+  es.onmessage = async ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "state") return applyState(m);
+    m.ids = arr(m.spikes, Uint32Array);
+    m.bitmaps = Promise.all(m.frames.map(f => createImageBitmap(new Blob([bytes(f)], { type: "image/png" }))));
+    queue.push(m);                   // keep arrival order; the bitmaps may still be decoding
+    m.bitmaps.then(b => { m.images = b; });
+    if (queue.length > 6) queue.splice(0, queue.length - 2);      // tab was asleep: jump to now
+  };
+}
+function applyState(s) {
+  state = s;
+  text("bPlay", s.playing ? "Pause" : "Play");
+  const sel = $("speed");
+  if (![...sel.options].some(o => +o.value === s.speed)) sel.add(new Option(s.speed + "×", s.speed));
+  sel.value = String(s.speed);
+  $("gap").value = s.gap; text("gapv", s.gap + " px");
+}
+
+// ---------- brain (WebGL 2) ----------
+function makeGL() {
+  const c = $("gl"), gl = c.getContext("webgl2", { antialias: true, alpha: false });
+  if (!gl) { $("fail").style.display = "grid"; c.style.display = "none"; return null; }
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o);
+    if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+  const prog = (v, f) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, "#version 300 es\n" + v));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, "#version 300 es\nprecision highp float;\n" + f)); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p; };
+  const pts = prog(`
+    layout(location=0) in vec3 pos; layout(location=1) in float glow; layout(location=2) in float role;
+    uniform mat4 mvp; uniform float px; uniform vec3 cols[4]; out vec4 col; out float g;
+    void main() {
+      gl_Position = mvp * vec4(pos, 1.0);
+      int r = int(role + 0.5); g = glow;
+      float base = r == 0 ? 1.7 : 2.8;
+      gl_PointSize = px * (base + glow * (r == 0 ? 3.5 : 7.0)) * 1.7 / gl_Position.w;
+      float rest = r == 0 ? 0.10 : 0.34;
+      col = vec4(mix(cols[r], vec3(1.0), r == 0 ? 0.0 : glow * 0.3) * (rest + glow * (r == 0 ? 0.6 : 0.8)), 1.0);
+    }`, `
+    in vec4 col; in float g; out vec4 o;
+    void main() { float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;
+      float core = smoothstep(1.0, 0.0, d); o = vec4(col.rgb * mix(smoothstep(1.0, 0.6, d), core * core * 1.6, g), 1.0); }`);
+  const restP = prog(`
+    layout(location=0) in vec3 pos; uniform mat4 mvp; uniform float px;
+    void main() { gl_Position = mvp * vec4(pos, 1.0); gl_PointSize = px * 1.3 * 1.7 / gl_Position.w; }`, `
+    out vec4 o; void main() { o = vec4(vec3(0.17, 0.17, 0.165), 1.0); }`);
+  const lin = prog(`
+    layout(location=0) in vec3 pos; layout(location=1) in float glow; layout(location=2) in float role;
+    uniform mat4 mvp; uniform vec3 cols[4]; out vec3 col;
+    void main() { gl_Position = mvp * vec4(pos, 1.0); col = cols[int(role + 0.5)] * glow * 0.55; }`, `
+    in vec3 col; out vec4 o; void main() { o = vec4(col, 1.0); }`);
+  const pos = arr(M.pos, Float32Array), rest = arr(M.rest, Float32Array);
+  const E = arr(M.edges, Uint32Array), nE = E.length / 2;
+  const buf = (data, loc, size, dyn) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, data, dyn ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0); return b; };
+  const vao = () => { const v = gl.createVertexArray(); gl.bindVertexArray(v); return v; };
+  const vP = vao(); buf(pos, 0, 3); const gB = buf(glow, 1, 1, true); buf(Float32Array.from(role), 2, 1);
+  const vR = vao(); buf(rest, 0, 3);
+  const eP = new Float32Array(nE * 6), eR = new Float32Array(nE * 2), eG = new Float32Array(nE * 2);
+  for (let k = 0; k < nE * 2; k++) { eP.set(pos.subarray(E[k] * 3, E[k] * 3 + 3), k * 3); eR[k] = role[E[k]]; }
+  const vE = vao(); buf(eP, 0, 3); const eB = buf(eG, 1, 1, true); buf(eR, 2, 1);
+  gl.bindVertexArray(null);
+
+  const cam = { yaw: 0, pitch: 0, dist: 1.75 };
+  let mvp = new Float32Array(16), w = 1, h = 1;
+  function matrix() {
+    const f = 1 / Math.tan(0.42), asp = w / h, n = 0.05, fa = 20;
+    const fit = cam.dist * Math.max(1, 1.45 / asp);           // narrow panels: step back so the brain fits
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cx = Math.cos(cam.pitch), sx = Math.sin(cam.pitch);
+    const V = [cy, sx * sy, -cx * sy, 0, 0, cx, sx, 0, sy, -sx * cy, cx * cy, 0, 0, 0, -fit, 1];
+    const P = [f / asp, 0, 0, 0, 0, f, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0];
+    for (let c2 = 0; c2 < 4; c2++) for (let r = 0; r < 4; r++) { let s = 0;
+      for (let k = 0; k < 4; k++) s += P[k * 4 + r] * V[c2 * 4 + k]; mvp[c2 * 4 + r] = s; }
+  }
+  let drag = null;
+  c.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY]; c.setPointerCapture(e.pointerId); hideTip(); });
+  c.addEventListener("pointerup", () => { drag = null; });
+  c.addEventListener("pointercancel", () => { drag = null; });
+  c.addEventListener("pointermove", e => {
+    if (!drag) return pick(e);
+    cam.yaw += (e.clientX - drag[0]) * 0.006;
+    cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch + (e.clientY - drag[1]) * 0.006));
+    drag = [e.clientX, e.clientY];
+  });
+  c.addEventListener("pointerleave", hideTip);
+  c.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.max(0.4, Math.min(5, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+  c.addEventListener("dblclick", () => Object.assign(cam, { yaw: 0, pitch: 0, dist: 1.75 }));
+
+  function pick(e) {
+    const b = c.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top;
+    let best = -1, bd = 100;
+    for (let i = 0; i < M.n; i++) {
+      const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+      const cw = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+      if (cw <= 0) continue;
+      const dx = ((mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12]) / cw * 0.5 + 0.5) * b.width - mx;
+      const dy = (0.5 - (mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13]) / cw * 0.5) * b.height - my;
+      const d = (dx * dx + dy * dy) * (role[i] ? 0.4 : 1);
+      if (d < bd) { bd = d; best = i; }
+    }
+    best < 0 ? hideTip() : showTip(e, neuronText(best));
+  }
+
+  return function draw() {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    w = Math.max(1, Math.round(c.clientWidth * dpr)); h = Math.max(1, Math.round(c.clientHeight * dpr));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    if ($("oSpin").checked && !drag) cam.yaw += 0.0018;
+    matrix();
+    gl.viewport(0, 0, w, h); gl.clearColor(0.043, 0.043, 0.039, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.blendEquation(gl.MAX);
+    const flat = new Float32Array(RGB.flat()), px = dpr * Math.min(1.5, c.clientHeight / 520);
+    if ($("oRest").checked && rest.length) { gl.useProgram(restP); gl.bindVertexArray(vR);
+      gl.uniformMatrix4fv(gl.getUniformLocation(restP, "mvp"), false, mvp);
+      gl.uniform1f(gl.getUniformLocation(restP, "px"), px); gl.drawArrays(gl.POINTS, 0, rest.length / 3); }
+    if ($("oEdges").checked && nE) { gl.useProgram(lin); gl.bindVertexArray(vE);
+      for (let k = 0; k < nE; k++) { eG[2 * k] = glow[E[2 * k]]; eG[2 * k + 1] = glow[E[2 * k]] * 0.5; }
+      gl.bindBuffer(gl.ARRAY_BUFFER, eB); gl.bufferSubData(gl.ARRAY_BUFFER, 0, eG);
+      gl.uniformMatrix4fv(gl.getUniformLocation(lin, "mvp"), false, mvp);
+      gl.uniform3fv(gl.getUniformLocation(lin, "cols"), flat); gl.drawArrays(gl.LINES, 0, nE * 2); }
+    gl.useProgram(pts); gl.bindVertexArray(vP);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gB); gl.bufferSubData(gl.ARRAY_BUFFER, 0, glow);
+    gl.uniformMatrix4fv(gl.getUniformLocation(pts, "mvp"), false, mvp);
+    gl.uniform1f(gl.getUniformLocation(pts, "px"), px); gl.uniform3fv(gl.getUniformLocation(pts, "cols"), flat);
+    gl.drawArrays(gl.POINTS, 0, M.n);
+  };
+}
+function roleName(i) {
+  if (role[i] === 1) return "input";
+  if (role[i] === 2) return "pushes flap";
+  if (role[i] === 3) return "pushes glide";
+  return "other";
+}
+function neuronText(i) {
+  const kind = { 1: "excitatory", "-1": "inhibitory", 0: "modulatory" }[R.sign[i]];
+  const n = lastSpikes.get(i) || 0;
+  const row = M.rows.find(r => r.role === 1 && r.neurons.includes(i));
+  return [M.ids ? "FlyWire " + M.ids[i] : "Neuron " + i, roleName(i) + (row ? " (" + row.label + ")" : "") + ", " + kind,
+    n + (n === 1 ? " spike" : " spikes") + " this decision"];
+}
+function showTip(e, lines) {
+  const t = $("tip");
+  t.replaceChildren(...lines.map(s => Object.assign(document.createElement("div"), { textContent: s })));
+  t.style.display = "block";
+  t.style.left = Math.min(e.clientX + 14, innerWidth - t.offsetWidth - 8) + "px";
+  t.style.top = Math.min(e.clientY + 14, innerHeight - t.offsetHeight - 8) + "px";
+}
+function hideTip() { $("tip").style.display = "none"; }
+
+// ---------- raster ----------
+function makeRaster() {
+  const rowsTotal = M.rows.reduce((s, r) => s + r.neurons.length, 0);
+  const TAIL = 3, RING = RASTER_W + TAIL, off = document.createElement("canvas"); off.width = RING; off.height = rowsTotal;
+  const cx = off.getContext("2d"), out = $("raster"), ox = out.getContext("2d");
+  rowOf = new Int16Array(M.n).fill(-1);
+  const bounds = [], box = $("rows");
+  let y = 0;
+  for (const r of M.rows) {
+    r.neurons.forEach((n, k) => { rowOf[n] = y + k; });
+    const d = document.createElement("div"), key = document.createElement("i");
+    key.className = "key"; key.style.background = COLORS[r.role];
+    d.append(key, r.label); d.style.top = (y + r.neurons.length / 2) / rowsTotal * 100 + "%";
+    box.append(d); y += r.neurons.length; bounds.push(y);
+  }
+  let col = 0;
+  return {
+    step(ids, from, to, first) {
+      cx.clearRect((col + TAIL) % RING, 0, 1, rowsTotal);
+      if (first) { cx.fillStyle = "#2b2a27"; cx.fillRect(col, 0, 1, rowsTotal); }
+      for (let k = from; k < to; k++) { const row = rowOf[ids[k]];
+        if (row >= 0) { cx.fillStyle = COLORS[role[ids[k]]]; cx.fillRect(col, row, TAIL, 2); } }
+      col = (col + 1) % RING;
+    },
+    draw() {
+      const d = Math.min(devicePixelRatio || 1, 2), w = Math.round(out.clientWidth * d), h = Math.round(out.clientHeight * d);
+      if (out.width !== w || out.height !== h) { out.width = w; out.height = h; }
+      ox.clearRect(0, 0, w, h);
+      const from = (col + TAIL) % RING, a = Math.min(RASTER_W, RING - from), sx = w / RASTER_W;   // newest at the right edge
+      ox.drawImage(off, from, 0, a, rowsTotal, 0, 0, a * sx, h);
+      if (a < RASTER_W) ox.drawImage(off, 0, 0, RASTER_W - a, rowsTotal, a * sx, 0, (RASTER_W - a) * sx, h);
+      ox.fillStyle = "#3a3935";
+      for (const b of bounds.slice(0, -1)) ox.fillRect(0, Math.round(b / rowsTotal * h), w, 1);
+    },
+  };
+}
+
+// ---------- senses, decision, history ----------
+function makeBars() {
+  return FEATURES.map(([neg, pos]) => {
+    const d = document.createElement("div"), a = document.createElement("span"), t = document.createElement("div"),
+      i = document.createElement("i"), b = document.createElement("span");
+    d.className = "bar"; t.className = "track"; a.textContent = neg; b.textContent = pos;
+    t.append(i); d.append(a, t, b); $("bars").append(d);
+    return v => {
+      i.style.left = (v < 0 ? 50 + v * 50 : 50) + "%"; i.style.width = Math.abs(v) * 50 + "%";
+      a.className = v < -0.02 ? "on" : ""; b.className = v > 0.02 ? "on" : "";
+      d.title = `${v > 0 ? pos : neg}: ${Math.abs(v).toFixed(2)} of 1`;
+    };
+  });
+}
+const histX = (k, w) => 30 + (k + HIST - history.length) / (HIST - 1) * (w - 38);
+function drawHist(hover = -1) {
+  const c = $("hist"), d = Math.min(devicePixelRatio || 1, 2), w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * d)) { c.width = Math.round(w * d); c.height = Math.round(h * d); }
+  const x = c.getContext("2d"); x.setTransform(d, 0, 0, d, 0, 0); x.clearRect(0, 0, w, h);
+  const pr = M.mode === "readout";
+  const m = pr ? 1 : Math.max(5, ...history.map(e => Math.max(Math.abs(e.evidence), Math.abs(e.threshold))));
+  const lo = pr ? 0 : -m, Y = v => h - 8 - (v - lo) / (m - lo) * (h - 20);
+  x.font = "11px system-ui"; x.fillStyle = css.getPropertyValue("--muted"); x.textAlign = "right"; x.textBaseline = "middle";
+  x.strokeStyle = "#2f2e2b"; x.lineWidth = 1;
+  for (const v of [lo, (lo + m) / 2, m]) { x.fillText(pr ? v : Math.round(v), 24, Y(v)); x.beginPath(); x.moveTo(30, Y(v)); x.lineTo(w - 8, Y(v)); x.stroke(); }
+  if (!history.length) return;
+  x.strokeStyle = "#8f8e86"; x.setLineDash([4, 4]); x.beginPath();
+  history.forEach((e, k) => x[k ? "lineTo" : "moveTo"](histX(k, w), Y(e.threshold))); x.stroke(); x.setLineDash([]);
+  x.strokeStyle = css.getPropertyValue("--ink2"); x.lineWidth = 2; x.lineJoin = "round"; x.beginPath();
+  history.forEach((e, k) => x[k ? "lineTo" : "moveTo"](histX(k, w), Y(e.evidence))); x.stroke();
+  history.forEach((e, k) => { if (!e.action) return; x.beginPath(); x.arc(histX(k, w), Y(e.evidence), 4, 0, 7);
+    x.fillStyle = COLORS[2]; x.fill(); x.strokeStyle = css.getPropertyValue("--panel"); x.lineWidth = 1.5; x.stroke(); });
+  if (hover >= 0) { x.strokeStyle = "#6b6a63"; x.lineWidth = 1; x.beginPath(); x.moveTo(histX(hover, w), 4); x.lineTo(histX(hover, w), h - 6); x.stroke(); }
+}
+let hoverAt = -1;
+$("hist").addEventListener("pointermove", e => {
+  const b = $("hist").getBoundingClientRect();
+  let best = -1, bd = 12;
+  history.forEach((_, k) => { const q = Math.abs(histX(k, b.width) - (e.clientX - b.left)); if (q < bd) { bd = q; best = k; } });
+  hoverAt = best;
+  if (best < 0) return hideTip();
+  const h = history[best];
+  showTip(e, [evidenceText(h), h.action ? "flapped" : "glided"]);
+});
+$("hist").addEventListener("pointerleave", () => { hoverAt = -1; hideTip(); });
+function evidenceText(h) {
+  if (M.mode === "readout") return "P(flap) " + h.evidence.toFixed(2);
+  if (h.evidence === 0 && h.threshold === 0) return "tie, picked at random";
+  const v = Math.abs(h.evidence).toFixed(Number.isInteger(h.evidence) ? 0 : 1);
+  return h.evidence >= 0 ? `flap ahead by ${v} spikes` : `glide ahead by ${v} spikes`;
+}
+
+// ---------- playback: spikes and frames of one decision share one clock ----------
+let bars, drawBrain, raster, ended = -1e9;
+function begin(t, now) {
+  const t0 = now - ended < 50 ? ended : now;
+  cur = { t, t0, step: 0, at: 0, frame: -1, ms: Math.max(30, t.seconds * 1000 * (queue.length > 1 ? 0.8 : 1)) };
+  lastSpikes = new Map();
+  for (const i of t.ids) lastSpikes.set(i, (lastSpikes.get(i) || 0) + 1);
+  t.features.forEach((v, k) => bars[k](v));
+  text("cSpikes", t.ids.length.toLocaleString());
+  text("sGame", String(t.game));
+  $("banner").hidden = true;
+}
+function finish() {
+  const t = cur.t;
+  ended = cur.t0 + cur.ms;
+  history.push({ evidence: t.evidence, threshold: t.threshold, action: t.action });
+  if (history.length > HIST) history.shift();
+  text("dWord", t.action ? "FLAP" : "glide");
+  $("dWord").style.color = t.action ? "var(--ink)" : "var(--muted)";
+  text("dWhy", evidenceText(t));
+  text("sScore", String(t.score)); text("sBest", String(t.best));
+  text("sMean", t.mean === null ? "–" : t.mean.toFixed(1));
+  if (t.done) { $("banner").hidden = false;
+    $("banner").firstElementChild.textContent = `Game over: ${t.score} ${t.score === 1 ? "pipe" : "pipes"}`; }
+  cur = null;
+}
+let prev = performance.now();
+function loop(now) {
+  const k = Math.exp(-(now - prev) / FADE_MS);
+  prev = now;
+  for (let i = 0; i < glow.length; i++) glow[i] *= k;
+  if (!cur && queue.length && queue[0].images) begin(queue.shift(), now);
+  if (cur) {
+    const t = cur.t, u = Math.min(1, (now - cur.t0) / cur.ms);
+    const upto = Math.floor(u * t.per_step.length);
+    while (cur.step < upto) {
+      const to = cur.at + t.per_step[cur.step];
+      for (let q = cur.at; q < to; q++) glow[t.ids[q]] = 1;
+      raster.step(t.ids, cur.at, to, cur.step === 0);
+      cur.at = to; cur.step++;
+    }
+    const f = Math.min(t.images.length - 1, Math.floor(u * t.images.length));
+    if (f !== cur.frame) { cur.frame = f; G.drawImage(t.images[f], 0, 0); }
+    text("cTime", `${(cur.step * M.dt).toFixed(1)} of ${(t.per_step.length * M.dt).toFixed(0)} ms brain time`);
+    if (u >= 1) finish();
+  }
+  if (drawBrain) drawBrain();
+  raster.draw();
+  drawHist(hoverAt < history.length ? hoverAt : -1);
+  requestAnimationFrame(loop);
+}
+
+// ---------- controls ----------
+$("bPlay").onclick = () => send("play", !state.playing);
+$("bStep").onclick = () => send("step");
+$("bRestart").onclick = () => send("restart");
+$("speed").onchange = e => send("speed", +e.target.value);
+$("gap").oninput = e => text("gapv", e.target.value + " px");
+$("gap").onchange = e => send("gap", +e.target.value);
+addEventListener("keydown", e => {
+  if (["INPUT", "SELECT", "BUTTON"].includes(e.target.tagName)) return;
+  if (e.code === "Space") { e.preventDefault(); send("play", !state.playing); }
+  if (e.code === "ArrowRight") { e.preventDefault(); send("step"); }
+});
+
+(async () => {
+  M = await (await fetch("/meta.json")).json();
+  role = arr(M.role, Uint8Array); R = { sign: arr(M.sign, Int8Array) }; glow = new Float32Array(M.n);
+  G = $("game").getContext("2d");
+  const count = [0, 0, 0, 0]; role.forEach(r => count[r]++);
+  text("brainname", `${M.name}, ${M.mode === "readout" ? "frozen connectome + trained readout" : M.learning ? "STDP, learning" : "STDP, frozen"}`);
+  text("bTitle", `${M.n.toLocaleString()} neurons, ${M.synapses.toLocaleString()} connections`);
+  text("bSub", M.layout === "flywire"
+    ? "Real FlyWire positions. Drag to turn, scroll to zoom, hover a neuron, double-click to reset."
+    : "Schematic layout: coordinates_princeton.csv was not found, so positions are not anatomical.");
+  const what = M.mode === "readout" ? "readout, pushes" : "output group,";
+  const items = [[1, "input"], [2, `${what} flap`], [3, `${what} glide`], [0, "other simulated"]];
+  for (const [r, name] of items) {
+    const s = document.createElement("span"), i = document.createElement("i");
+    i.style.background = COLORS[r]; s.append(i, `${name} (${count[r].toLocaleString()})`); $("legend").append(s);
+  }
+  if (arr(M.rest, Float32Array).length) {
+    const s = document.createElement("span"), i = document.createElement("i");
+    i.style.background = "#4a4944"; s.append(i, "rest of brain (not simulated)"); $("legend").append(s);
+  } else $("oRest").parentElement.style.display = "none";
+  const msDecision = M.steps * M.dt, msGame = M.frame_skip / M.fps * 1000;
+  text("rSub", `one row per neuron, ${RASTER_W * M.dt} ms of brain time. Gray lines: decisions. ` +
+    `Each decision is ${msDecision} ms of brain time, stretched over ${Math.round(msGame)} ms of game time.`);
+  text("hTitle", M.mode === "readout" ? "P(flap)" : "Flap minus glide spikes");
+  $("oSpin").checked = false;
+  bars = makeBars(); raster = makeRaster(); drawBrain = makeGL();
+  connect();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
