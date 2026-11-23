@@ -32,6 +32,15 @@ class Preset:
     max_steps: int | None = None   # only for games without a time limit of their own
     make: dict = field(default_factory=dict)
     train: dict = field(default_factory=dict)   # defaults for the training flags
+    senses: list | None = None     # [(name when an input is < 0, name when it is > 0)]. None = automatic
+    moves: list | None = None      # [name of each choice], for a game with one action head. None = automatic
+
+
+def tiles(columns, n):
+    """Sense names for a grid world: state 2k is +1 on input k, state 2k+1 is -1 (see discrete_code)."""
+    def name(i):
+        return f"row {i // columns + 1} col {i % columns + 1}" if i < n else ""
+    return [(name(2 * k + 1), name(2 * k)) for k in range((n + 1) // 2)]
 
 
 def over(*scale):
@@ -52,27 +61,50 @@ def mountain_car_energy(obs):
 
 PRESETS = {
     "cartpole": Preset("CartPole-v1", "balance a pole on a cart",
-                       over(1.2, 1.5, 0.15, 2.0), 4, train=dict(steps=150_000)),
+                       over(1.2, 1.5, 0.15, 2.0), 4, train=dict(steps=150_000),
+                       senses=[("cart left", "cart right"), ("moving left", "moving right"),
+                               ("leaning left", "leaning right"), ("tipping left", "tipping right")],
+                       moves=["push left", "push right"]),
     "acrobot": Preset("Acrobot-v1", "swing a two-link arm above the line",
-                      over(1, 1, 1, 1, 6.0, 12.0), 6, train=dict(steps=200_000)),
+                      over(1, 1, 1, 1, 6.0, 12.0), 6, train=dict(steps=200_000),
+                      senses=[("arm 1 up", "arm 1 down"), ("arm 1 left", "arm 1 right"), ("folded", "straight"),
+                              ("bent cw", "bent ccw"), ("arm 1 turns cw", "arm 1 turns ccw"),
+                              ("arm 2 turns cw", "arm 2 turns ccw")],
+                      moves=["torque -1", "no torque", "torque +1"]),
     "mountaincar": Preset("MountainCar-v0", "rock a weak car out of a valley (trained with an energy hint)",
                           lambda o: np.array([(o[0] + 0.5) / 0.7, o[1] / 0.05]), 2,
-                          potential=mountain_car_energy, train=dict(steps=200_000, lr=0.001)),
+                          potential=mountain_car_energy, train=dict(steps=200_000, lr=0.001),
+                          senses=[("left of valley", "right of valley"), ("rolling left", "rolling right")],
+                          moves=["push left", "coast", "push right"]),
     "lunarlander": Preset("LunarLander-v3", "land between the flags (needs gymnasium[box2d])",
-                          over(0.8, 1.0, 0.8, 0.8, 0.5, 0.8, 1, 1), 8, train=dict(steps=600_000)),
+                          over(0.8, 1.0, 0.8, 0.8, 0.5, 0.8, 1, 1), 8, train=dict(steps=600_000),
+                          senses=[("left of pad", "right of pad"), ("below pad", "above pad"),
+                                  ("drifting left", "drifting right"), ("falling", "rising"),
+                                  ("tilted right", "tilted left"), ("turning cw", "turning ccw"),
+                                  ("", "leg 1 down"), ("", "leg 2 down")],
+                          moves=["do nothing", "left engine", "main engine", "right engine"]),
     "pendulum": Preset("Pendulum-v1", "swing up and hold a pendulum (continuous torque)",
-                       over(1, 1, 6.0), 3, train=dict(steps=300_000, gamma=0.95)),
+                       over(1, 1, 6.0), 3, train=dict(steps=300_000, gamma=0.95),
+                       senses=[("hanging", "upright"), ("on the right", "on the left"), ("turning cw", "turning ccw")]),
     "frozenlake": Preset("FrozenLake-v1", "cross slippery ice without falling in a hole",
-                         train=dict(steps=300_000, entropy=0.01)),
+                         train=dict(steps=300_000, entropy=0.01),
+                         senses=tiles(4, 16), moves=["left", "down", "right", "up"]),
     "cliffwalking": Preset("CliffWalking-v1", "walk along a cliff edge to the goal",
-                           max_steps=200, train=dict(steps=200_000, entropy=0.02)),
+                           max_steps=200, train=dict(steps=200_000, entropy=0.02),
+                           senses=tiles(12, 48), moves=["up", "right", "down", "left"]),
     "blackjack": Preset("Blackjack-v1", "beat the dealer",
                         lambda o: np.array([(o[0] - 14) / 7, (o[1] - 5.5) / 4.5, 1.0 if o[2] else -1.0]), 3,
-                        train=dict(steps=100_000)),
+                        train=dict(steps=100_000),
+                        senses=[("hand under 14", "hand over 14"), ("dealer low", "dealer high"),
+                                ("no usable ace", "usable ace")],
+                        moves=["stick", "hit"]),
     "flappy": Preset("FlappyBird-v0", "Flappy Bird (same features as flappy_fly.py; set --gap)",
                      flappy_features, 4, repeat=3, noop=0,
                      make=dict(use_lidar=False, pipe_gap=150, score_limit=100),
-                     train=dict(steps=200_000, gamma=0.95)),
+                     train=dict(steps=200_000, gamma=0.95),
+                     senses=[("above gap", "below gap"), ("rising", "falling"), ("pipe far", "pipe close"),
+                             ("high", "low")],
+                     moves=["glide", "flap"]),
 }
 
 
@@ -108,6 +140,40 @@ def encoder(space):
     raise ValueError(f"observation space {space} is not supported")
 
 
+def sense_names(space):
+    """[(name when < 0, name when > 0)] for every value encoder(space) produces."""
+    if isinstance(space, spaces.Discrete):
+        n, start = int(space.n), int(space.start)
+        names = [f"state {i + start}" for i in range(n)] + [""]
+        return [(names[2 * k + 1], names[2 * k]) for k in range((n + 1) // 2)]
+    if isinstance(space, spaces.MultiBinary):
+        return [(f"{k} off", f"{k} on") for k in range(int(np.prod(space.shape)))]
+    if isinstance(space, spaces.Box):
+        return [(f"value {k} low", f"value {k} high") for k in range(int(np.prod(space.shape)))]
+    if isinstance(space, spaces.MultiDiscrete):
+        parts = [(k, spaces.Discrete(int(n), start=int(first)))
+                 for k, (n, first) in enumerate(zip(np.ravel(space.nvec), np.ravel(space.start)))]
+    else:
+        keys = range(len(space.spaces)) if isinstance(space, spaces.Tuple) else list(space.spaces)
+        parts = [(k, space.spaces[k]) for k in keys]
+    return [tuple(f"{k}: {n}" if n else "" for n in pair) for k, part in parts for pair in sense_names(part)]
+
+
+def move_names(space, bins):
+    """[[name per choice] per head] for action_heads(space, bins)."""
+    heads, act = action_heads(space, bins)
+    if isinstance(space, spaces.Discrete):
+        return [[f"action {i + int(space.start)}" for i in range(heads[0])]]
+    if isinstance(space, spaces.Box):
+        grid = np.array([np.ravel(act([c] * len(heads))) for c in range(bins)])
+        return [[(f"{d}: " if len(heads) > 1 else "") + f"{grid[c, d]:+.3g}" for c in range(bins)]
+                for d in range(len(heads))]
+    if isinstance(space, spaces.MultiBinary):
+        return [[f"{d}: off", f"{d}: on"] for d in range(len(heads))]
+    starts = np.ravel(space.start).astype(int)
+    return [[f"{d}: {c + starts[d]}" for c in range(n)] for d, n in enumerate(heads)]
+
+
 def action_heads(space, bins):
     """(choices per head, [choice per head] -> env action) for an action space."""
     if isinstance(space, spaces.Discrete):
@@ -130,7 +196,9 @@ class Game:
     """A gymnasium environment with brain-sized inputs and outputs."""
 
     def __init__(self, name, render=False, bins=None, make=None):
+        """render: False, True (a window) or "rgb_array" (frames for fly_viewer.py)."""
         self.name = name
+        self.on_frame = None           # called after every game frame, so a viewer sees the repeated ones too
         self.preset = p = PRESETS.get(name.lower()) or Preset(name)
         kwargs = {**p.make, **(make or {})}
         if p.env_id.startswith("FlappyBird"):
@@ -139,7 +207,7 @@ class Game:
             raise ValueError(f"no game called '{name}'. Presets: {', '.join(PRESETS)}; "
                              "or use any gymnasium id, for example CartPole-v1")
         if render:
-            kwargs["render_mode"] = "human"
+            kwargs["render_mode"] = "human" if render is True else render
         self.env = gymnasium.make(p.env_id, **kwargs)
         # some games never end on their own: random play on a cliff can wander for thousands of steps
         self.limit = None if self.env.spec.max_episode_steps else (p.max_steps or 1000)
@@ -151,6 +219,14 @@ class Game:
             self.mask, self.encode = encoder(self.env.observation_space)
         self.n_obs = len(self.mask)
         self.centre, self.scale = np.zeros(self.n_obs), np.ones(self.n_obs)
+
+    @property
+    def senses(self):
+        return self.preset.senses or sense_names(self.env.observation_space)
+
+    @property
+    def moves(self):
+        return [self.preset.moves] if self.preset.moves else move_names(self.env.action_space, self.bins)
 
     @property
     def needs_calibration(self):
@@ -196,6 +272,8 @@ class Game:
             self.obs, r, term, trunc, self.info = self.env.step(a)
             self.t += 1
             reward += float(r)
+            if self.on_frame:
+                self.on_frame()
             trunc = trunc or (self.t == self.limit and not term)
             if term or trunc:
                 break

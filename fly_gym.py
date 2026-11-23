@@ -323,15 +323,30 @@ def train_readout(args, game, player, save):
     return dict(ro=ro), log
 
 
+class Dopamine:
+    """Reward prediction error of a linear critic on the spike counts, in units of its own running size."""
+
+    def __init__(self, critic, gamma, lr):
+        self.critic, self.gamma, self.lr = critic, gamma, lr
+        self.scale, self.sq = RewardScale(gamma), 1.0
+
+    def __call__(self, x, r, nx, term, done):
+        c = self.critic
+        delta = self.scale(r, done) + self.gamma * c.value(nx) * (not term) - c.value(x)
+        c.v += self.lr * delta * x / (x @ x)                        # normalised TD(0)
+        self.sq += 0.01 * (delta ** 2 - self.sq)
+        return float(np.clip(delta / np.sqrt(self.sq + 1e-8), -3, 3))
+
+
 def train_stdp(args, game, player, save):
     """Three-factor learning: spike-timing eligibility x dopamine, dopamine = reward prediction error."""
     rng = np.random.default_rng(args.seed)
     jl, agent = player.jl, player.agent
     critic = Readout(player.K, game.heads, *warm_up(game, player, args.seed))   # only its value estimate is used
     voter = Voter(game.heads)
-    scale, log = RewardScale(args.gamma), Log(max(args.steps // 20, 1))
+    dopamine, log = Dopamine(critic, args.gamma, args.critic_lr), Log(max(args.steps // 20, 1))
     agent.brain.learning = True
-    ep, steps, dopamine_sq, ckpt = 0, 0, 1.0, args.steps // 10
+    ep, steps, ckpt = 0, 0, args.steps // 10
     while steps < args.steps:
         f = game.reset(args.seed * 1_000_000 + ep)
         player.reset()
@@ -346,14 +361,11 @@ def train_stdp(args, game, player, save):
             done = term or trunc
             counts, out = player.step(f)
             nx = critic.x(counts)
-            delta = scale(r + bonus, done) + args.gamma * critic.value(nx) * (not term) - critic.value(x)
-            critic.v += args.critic_lr * delta * x / (x @ x)                # normalised TD(0)
-            dopamine_sq += 0.01 * (delta ** 2 - dopamine_sq)
-            dopamine = float(np.clip(delta / np.sqrt(dopamine_sq + 1e-8), -3, 3))
+            d = dopamine(x, r + bonus, nx, term, done)
             # only synapses onto the chosen action's population. FlyBrain.reward! (every excitatory synapse)
             # learned the reverse of the right answer here on a two-cue bandit, cause not found.
             for s, choice in zip(voter.slices, c):
-                jl.reward_chosen_b(agent, dopamine, s.start + choice)
+                jl.reward_chosen_b(agent, d, s.start + choice)
             x = nx
         log.episode(total, steps)
         ep += 1
@@ -454,7 +466,7 @@ def read_player(path, render):
 
 
 def make_game(name, render=False, bins=None, gap=None):
-    if not render:
+    if render is not True:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
     from fly_games import Game
     return Game(name, render, bins, dict(pipe_gap=gap) if gap else None)
