@@ -28,6 +28,8 @@ import numpy as np
 
 EVAL_SEED = 900_000_000        # evaluation games never overlap training games
 VALID_SEED = 600_000_000       # games used to choose between greedy and sampled play
+# smell circuit (antennal lobe, lateral horn, mushroom body calyx) + premotor lateral accessory lobes: 11,795 neurons
+NEUROPILS = "AL_L,LH_L,MB_CA_L,LAL_L,LAL_R"
 MAX_INPUT_NEURONS = 2400       # games with many inputs get smaller populations instead of using up the brain
 
 GYM_HELPERS = r"""
@@ -473,7 +475,7 @@ def parse_args(argv=None):
     tr.add_argument("--seed", type=int, default=0)
     tr.add_argument("--bins", type=int, help="choices per continuous action dimension (default 5)")
     tr.add_argument("--gap", type=int, help="flappy only: pipe gap in pixels (default 150)")
-    tr.add_argument("--neuropils", default="AL_L,LH_L,MB_CA_L", help='comma list, or "all" for the whole brain')
+    tr.add_argument("--neuropils", default=NEUROPILS, help='comma list, or "all" for the whole brain')
     tr.add_argument("--pop", type=int, default=20, help="neurons per input/output population")
     tr.add_argument("--K", type=int, default=500, help="neurons read out")
     tr.add_argument("--action-ms", type=int, default=40, help="simulated brain time per decision (at 20 ms the "

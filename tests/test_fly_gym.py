@@ -82,6 +82,13 @@ class Games(unittest.TestCase):
             fg.Game("nosuchgame")
 
 
+class Brain(unittest.TestCase):
+    def test_training_uses_the_motor_region_by_default(self):
+        regions = fy.parse_args(["train", "cartpole"]).neuropils.split(",")
+        self.assertEqual(regions, ["AL_L", "LH_L", "MB_CA_L", "LAL_L", "LAL_R"])
+        self.assertEqual(fy.parse_args(["train", "cartpole", "--neuropils", "AL_L"]).neuropils, "AL_L")
+
+
 class Learning(unittest.TestCase):
     def test_advantages(self):
         # ends for real at t=1 (no future), then a time-out at t=2 (future kept)

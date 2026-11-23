@@ -21,6 +21,11 @@ One run uses one CPU core and about 300-550 MB. `connections_princeton.csv` must
 | `players/*.npz` | the trained players from the table below |
 | `tests/test_fly_gym.py` | fast tests, no Julia: `python -m unittest discover tests` |
 
+## Which part of the brain
+
+Training uses 11,795 neurons: the left smell circuit (`AL_L`, `LH_L`, `MB_CA_L`; 8,547 neurons) plus a premotor region,
+both lateral accessory lobes (`LAL_L`, `LAL_R`). Change it with `--neuropils`. Saved players remember their own regions.
+
 ## How it learns
 
 - **readout** (default): the connectome is frozen. A linear policy and value estimate on the spike counts of 500
@@ -32,6 +37,8 @@ MountainCar is the only game with a training hint (potential-based energy shapin
 own reward.
 
 ## Results
+
+These players were trained before the premotor region was added. To repeat them, use `--neuropils AL_L,LH_L,MB_CA_L`.
 
 Mean return over 100 frozen games on seeds never used in training (Blackjack: 2,000 games), +- standard error.
 **One training seed per game**, so small differences between columns mean little. Higher is better everywhere.
