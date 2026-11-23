@@ -173,13 +173,16 @@ def load_brain(args):
     from juliacall import Main as jl
     jl.seval(f'import Pkg; Pkg.activate(raw"{ROOT / "FlyBrain"}"; io=devnull); using FlyBrain, Serialization, Random')
     jl.seval(f"Random.seed!({args.seed})")
+    n_actions = getattr(args, "n_actions", 2)
     if args.load:
         agent = jl.seval(f'deserialize(raw"{Path(args.load).resolve()}")')
     else:
+        # 4 features and 2 actions are Flappy Bird's; fly_gym.py asks for other sizes
         neuropils = "nothing" if args.neuropils == "all" else repr(args.neuropils.split(","))
         neuropils = neuropils.replace("'", '"')
         agent = jl.seval(
-            f'make_agent(raw"{ROOT / "connections_princeton.csv"}"; n_obs=4, n_actions=2, '
+            f'make_agent(raw"{ROOT / "connections_princeton.csv"}"; n_obs={getattr(args, "n_obs", 4)}, '
+            f'n_actions={n_actions}, '
             f'neuropils={neuropils}, n_per_pop={args.pop}, action_ms={args.action_ms}, '
             f'max_hz={float(args.max_hz)}, input_mv={float(args.input_mv)}, '
             f'params=FlyBrain.Params(lr={float(args.lr)}, tau_e={float(args.tau_e)}))')
@@ -187,7 +190,7 @@ def load_brain(args):
     if args.outputs != "indegree" and not args.load:
         hops = 2 if args.outputs == "downstream2" else 1
         n_pos, lo, hi = jl.downstream_outputs_b(agent, args.pop, hops=hops)
-        print(f"outputs rewired downstream of inputs ({hops} hop): {n_pos}/{2 * args.pop} receive input, "
+        print(f"outputs rewired downstream of inputs ({hops} hop): {n_pos}/{n_actions * args.pop} receive input, "
               f"score {lo:.0f}..{hi:.0f}")
     if args.select_wiring and not args.load:
         ranked = jl.rank_wirings(agent, args.select_wiring, swap=not args.no_swap)
