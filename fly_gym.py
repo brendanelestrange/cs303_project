@@ -6,7 +6,8 @@ game values -> input neuron populations -> 40 ms of simulated brain -> action.
 Two ways to learn, both from the game's reward only:
   readout : the connectome is frozen; a linear readout of K neurons' spike counts is trained (PPO, actor + critic).
   stdp    : the connectome itself changes. Output populations vote for the action and dopamine-like
-            reward-modulated STDP (FlyBrain.reward!) strengthens synapses; dopamine = reward prediction error.
+            reward-modulated STDP changes the synapses onto them; dopamine = reward prediction error.
+            Learns simple cue -> action games; it did not learn CartPole (see FLY_GYM.md).
 
 List the games:    python fly_gym.py list
 Random baseline:   python fly_gym.py random cartpole
@@ -347,11 +348,10 @@ def train_stdp(args, game, player, save):
             critic.v += args.critic_lr * delta * x / (x @ x)                # normalised TD(0)
             dopamine_sq += 0.01 * (delta ** 2 - dopamine_sq)
             dopamine = float(np.clip(delta / np.sqrt(dopamine_sq + 1e-8), -3, 3))
-            if args.stdp_where == "chosen":
-                for s, choice in zip(voter.slices, c):
-                    jl.reward_chosen_b(agent, dopamine, s.start + choice)
-            else:
-                jl.reward_b(agent, dopamine)
+            # only synapses onto the chosen action's population. FlyBrain.reward! (every excitatory synapse)
+            # learned the reverse of the right answer here on a two-cue bandit, cause not found.
+            for s, choice in zip(voter.slices, c):
+                jl.reward_chosen_b(agent, dopamine, s.start + choice)
             x = nx
         log.episode(total, steps)
         ep += 1
@@ -486,8 +486,6 @@ def parse_args(argv=None):
     tr.add_argument("--minibatch", type=int, default=128)
     tr.add_argument("--entropy", type=float, help="exploration bonus (default 0.003)")
     tr.add_argument("--stdp-lr", type=float, default=0.2, help="stdp: synapse learning rate")
-    tr.add_argument("--stdp-where", choices=["all", "chosen"], default="chosen",
-                    help="stdp: change every excitatory synapse, or only those onto the chosen action's population")
     tr.add_argument("--critic-lr", type=float, default=0.05, help="stdp: learning rate of the reward prediction")
     tr.add_argument("--epsilon", type=float, default=0.2, help="stdp: random actions at the start")
 
